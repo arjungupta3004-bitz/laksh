@@ -1,0 +1,245 @@
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+// ─── AUTH ────────────────────────────────────────────────────────────
+
+model Student {
+  id            String   @id @default(cuid())
+  name          String
+  email         String   @unique
+  passwordHash  String   @map("password_hash")
+  board         String   @default("CBSE")
+  grade         Int      @default(10)
+  examDate      DateTime? @map("exam_date")
+  onboarded     Boolean  @default(false)
+  createdAt     DateTime @default(now()) @map("created_at")
+  updatedAt     DateTime @updatedAt @map("updated_at")
+
+  goal               Goal?
+  diagnosticSessions DiagnosticSession[]
+  masteryScores      MasteryScore[]
+  studyPlan          StudyPlan?
+  streaks            Streak?
+
+  @@map("students")
+}
+
+// ─── CURRICULUM ──────────────────────────────────────────────────────
+
+model Subject {
+  id        String   @id @default(cuid())
+  name      String
+  code      String
+  board     String   @default("CBSE")
+  grade     Int      @default(10)
+  totalMarks Int     @default(80) @map("total_marks")
+  createdAt DateTime @default(now()) @map("created_at")
+
+  chapters     Chapter[]
+  subjectGoals SubjectGoal[]
+
+  @@unique([code, board, grade])
+  @@map("subjects")
+}
+
+model Chapter {
+  id         String  @id @default(cuid())
+  subjectId  String  @map("subject_id")
+  name       String
+  chapterNo  Int     @map("chapter_no")
+  totalMarks Int     @default(0) @map("total_marks")
+  weightage  Float   @default(0) // percentage weight in exam
+  frequency  Float   @default(0) // how often it appears in past papers
+
+  subject          Subject           @relation(fields: [subjectId], references: [id])
+  topics           Topic[]
+  questions        Question[]
+  masteryScores    MasteryScore[]
+  planItems        PlanItem[]
+
+  @@unique([subjectId, chapterNo])
+  @@map("chapters")
+}
+
+model Topic {
+  id        String @id @default(cuid())
+  chapterId String @map("chapter_id")
+  name      String
+  topicNo   Int    @map("topic_no")
+
+  chapter Chapter @relation(fields: [chapterId], references: [id])
+
+  @@unique([chapterId, topicNo])
+  @@map("topics")
+}
+
+// ─── QUESTIONS ───────────────────────────────────────────────────────
+
+enum Difficulty {
+  EASY
+  MEDIUM
+  HARD
+}
+
+enum QuestionType {
+  MCQ
+  NUMERICAL
+  SHORT_ANSWER
+}
+
+model Question {
+  id          String       @id @default(cuid())
+  chapterId   String       @map("chapter_id")
+  type        QuestionType @default(MCQ)
+  difficulty  Difficulty   @default(MEDIUM)
+  text        String
+  options     Json?        // for MCQ: ["option1", "option2", ...]
+  answer      String       // correct answer text or index
+  explanation String?
+  marks       Int          @default(1)
+  createdAt   DateTime     @default(now()) @map("created_at")
+
+  chapter             Chapter              @relation(fields: [chapterId], references: [id])
+  diagnosticResponses DiagnosticResponse[]
+
+  @@map("questions")
+}
+
+// ─── GOALS ───────────────────────────────────────────────────────────
+
+model Goal {
+  id                String   @id @default(cuid())
+  studentId         String   @unique @map("student_id")
+  targetPercentage  Float    @map("target_percentage") // e.g. 90.0
+  examDate          DateTime @map("exam_date")
+  createdAt         DateTime @default(now()) @map("created_at")
+  updatedAt         DateTime @updatedAt @map("updated_at")
+
+  student      Student       @relation(fields: [studentId], references: [id])
+  subjectGoals SubjectGoal[]
+
+  @@map("goals")
+}
+
+model SubjectGoal {
+  id               String @id @default(cuid())
+  goalId           String @map("goal_id")
+  subjectId        String @map("subject_id")
+  targetMarks      Int    @map("target_marks")
+  targetPercentage Float  @map("target_percentage")
+
+  goal    Goal    @relation(fields: [goalId], references: [id], onDelete: Cascade)
+  subject Subject @relation(fields: [subjectId], references: [id])
+
+  @@unique([goalId, subjectId])
+  @@map("subject_goals")
+}
+
+// ─── DIAGNOSTIC ──────────────────────────────────────────────────────
+
+enum SessionStatus {
+  IN_PROGRESS
+  COMPLETED
+}
+
+model DiagnosticSession {
+  id          String        @id @default(cuid())
+  studentId   String        @map("student_id")
+  subjectCode String        @map("subject_code")
+  status      SessionStatus @default(IN_PROGRESS)
+  startedAt   DateTime      @default(now()) @map("started_at")
+  completedAt DateTime?     @map("completed_at")
+
+  student   Student              @relation(fields: [studentId], references: [id])
+  responses DiagnosticResponse[]
+
+  @@map("diagnostic_sessions")
+}
+
+model DiagnosticResponse {
+  id          String   @id @default(cuid())
+  sessionId   String   @map("session_id")
+  questionId  String   @map("question_id")
+  answer      String?
+  isCorrect   Boolean  @map("is_correct")
+  timeTakenMs Int?     @map("time_taken_ms")
+  answeredAt  DateTime @default(now()) @map("answered_at")
+
+  session  DiagnosticSession @relation(fields: [sessionId], references: [id], onDelete: Cascade)
+  question Question          @relation(fields: [questionId], references: [id])
+
+  @@unique([sessionId, questionId])
+  @@map("diagnostic_responses")
+}
+
+model MasteryScore {
+  id        String   @id @default(cuid())
+  studentId String   @map("student_id")
+  chapterId String   @map("chapter_id")
+  score     Float    @default(0) // 0-100
+  level     String   @default("weak") // weak, moderate, strong
+  updatedAt DateTime @updatedAt @map("updated_at")
+
+  student Student @relation(fields: [studentId], references: [id])
+  chapter Chapter @relation(fields: [chapterId], references: [id])
+
+  @@unique([studentId, chapterId])
+  @@map("mastery_scores")
+}
+
+// ─── STUDY PLAN ──────────────────────────────────────────────────────
+
+model StudyPlan {
+  id          String   @id @default(cuid())
+  studentId   String   @unique @map("student_id")
+  generatedAt DateTime @default(now()) @map("generated_at")
+  updatedAt   DateTime @updatedAt @map("updated_at")
+
+  student Student    @relation(fields: [studentId], references: [id])
+  items   PlanItem[]
+
+  @@map("study_plans")
+}
+
+enum PlanItemType {
+  STUDY
+  REVISION
+  PRACTICE
+}
+
+model PlanItem {
+  id          String       @id @default(cuid())
+  planId      String       @map("plan_id")
+  chapterId   String       @map("chapter_id")
+  type        PlanItemType @default(STUDY)
+  date        DateTime
+  durationMin Int          @default(45) @map("duration_min")
+  description String?
+  completed   Boolean      @default(false)
+  completedAt DateTime?    @map("completed_at")
+
+  plan    StudyPlan @relation(fields: [planId], references: [id], onDelete: Cascade)
+  chapter Chapter   @relation(fields: [chapterId], references: [id])
+
+  @@map("plan_items")
+}
+
+// ─── MOTIVATION ──────────────────────────────────────────────────────
+
+model Streak {
+  id            String   @id @default(cuid())
+  studentId     String   @unique @map("student_id")
+  currentStreak Int      @default(0) @map("current_streak")
+  longestStreak Int      @default(0) @map("longest_streak")
+  lastActiveAt  DateTime? @map("last_active_at")
+
+  student Student @relation(fields: [studentId], references: [id])
+
+  @@map("streaks")
+}
