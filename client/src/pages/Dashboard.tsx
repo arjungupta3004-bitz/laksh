@@ -147,7 +147,7 @@ export default function Dashboard() {
             <span className="text-3xl font-bold text-gray-900">{data.streak.current}</span>
           </div>
           <p className="text-xs text-gray-400 text-center">
-            {data.streak.current === 1 ? 'day' : 'days'} \u00B7 best: {data.streak.longest}
+            {data.streak.current === 1 ? 'day' : 'days'} 
           </p>
         </div>
 
