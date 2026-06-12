@@ -1,7 +1,7 @@
 import { useState, useEffect, FormEvent } from 'react';
 import { useNavigate } from 'react-router-dom';
-import { goalApi } from '../services/api';
-import { Target, TrendingUp, AlertTriangle, CheckCircle2 } from 'lucide-react';
+import { goalApi, dashboardApi } from '../services/api';
+import { Target, TrendingUp, AlertTriangle, CheckCircle2, BarChart2 } from 'lucide-react';
 
 interface SubjectGoal {
   subject: string;
@@ -27,16 +27,30 @@ export default function GoalSetup() {
   const [existingGoal, setExistingGoal] = useState(false);
   const [loading, setLoading] = useState(false);
   const [fetching, setFetching] = useState(true);
+  
+  // New state for projected score
+  const [projectedScore, setProjectedScore] = useState<number | null>(null);
+  const [diagnosticsCompleted, setDiagnosticsCompleted] = useState(0);
 
   useEffect(() => {
-    goalApi.get().then(({ data }) => {
-      if (data.goal) {
-        setTargetPercentage(data.goal.targetPercentage);
-        setExamDate(new Date(data.goal.examDate).toISOString().split('T')[0]);
-        setSubjectGoals(data.goal.subjectGoals);
-        setExistingGoal(true);
-      }
-    }).catch(console.error).finally(() => setFetching(false));
+    Promise.all([goalApi.get(), dashboardApi.get()])
+      .then(([goalRes, dashRes]) => {
+        if (goalRes.data.goal) {
+          setTargetPercentage(goalRes.data.goal.targetPercentage);
+          setExamDate(new Date(goalRes.data.goal.examDate).toISOString().split('T')[0]);
+          setSubjectGoals(goalRes.data.goal.subjectGoals);
+          setExistingGoal(true);
+        }
+        if (dashRes.data.dashboard) {
+          const readiness = dashRes.data.dashboard.readiness.overall || 0;
+          setDiagnosticsCompleted(dashRes.data.dashboard.diagnosticsCompleted || 0);
+          if (dashRes.data.dashboard.diagnosticsCompleted > 0) {
+            setProjectedScore(Math.min(100, Math.round(readiness + 15)));
+          }
+        }
+      })
+      .catch(console.error)
+      .finally(() => setFetching(false));
   }, []);
 
   const handleSubmit = async (e: FormEvent) => {
@@ -90,6 +104,20 @@ export default function GoalSetup() {
           </p>
         </div>
       </div>
+
+      {projectedScore !== null && (
+        <div className="mb-6 bg-blue-50 border border-blue-200 rounded-xl p-4 flex items-center gap-4">
+          <div className="w-12 h-12 bg-blue-100 text-blue-600 rounded-full flex items-center justify-center shrink-0">
+            <BarChart2 size={24} />
+          </div>
+          <div>
+            <p className="font-semibold text-blue-900 text-lg">Projected Achievable Score: {projectedScore}%</p>
+            <p className="text-sm text-blue-700">
+              Based on your {diagnosticsCompleted} completed diagnostic test{diagnosticsCompleted > 1 ? 's' : ''}, our engine estimates you can achieve a {projectedScore}% with an optimal study plan.
+            </p>
+          </div>
+        </div>
+      )}
 
       <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
         {/* Goal Form */}
